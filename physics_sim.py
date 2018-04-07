@@ -136,9 +136,11 @@ class PhysicsSim():
         for ii in range(3):
             if position[ii] <= self.lower_bounds[ii]:
                 new_positions.append(self.lower_bounds[ii])
+                print("lower_bounds: ",ii, " value: ",position[ii])
                 self.done = True
             elif position[ii] > self.upper_bounds[ii]:
                 new_positions.append(self.upper_bounds[ii])
+                print("upper_bounds: ",ii, " value: ",position[ii])
                 self.done = True
             else:
                 new_positions.append(position[ii])
@@ -146,5 +148,6 @@ class PhysicsSim():
         self.pose = np.array(new_positions + list(angles))
         self.time += self.dt
         if self.time > self.runtime:
+            print("reach max runtime")
             self.done = True
         return self.done
