@@ -30,14 +30,17 @@ class Task():
         self.action_size = 4
 
         
-    def get_reward(self):
+    def get_reward(self, rotor_speeds):
         """Uses current pose of sim to return reward."""
         #if(self.sim.pose[2]<-1.0):
         #    return -10
         #manhattan = abs(self.sim.pose[:3] - self.target_pos).sum()
         #if (manhattan<0.1):
         #    return 10
-        reward = .2*self.sim.pose[2]-.1*(abs(self.sim.pose[:2] - self.target_pos[:2])).sum()+0.1*self.sim.v[2]
+        high_reward = .3*self.sim.pose[2]
+        sideway_penalty = .1*(abs(self.sim.pose[:2] - self.target_pos[:2])).sum()
+        uneven_rotor_speeds = .001*np.std(rotor_speeds)
+        reward = high_reward - sideway_penalty - uneven_rotor_speeds
         return reward
         #return 0
 
@@ -49,7 +52,7 @@ class Task():
             done = self.sim.next_timestep(rotor_speeds) # update the sim pose and velocities
             if done:
                 print('sim.next_timestep return done')
-            reward += self.get_reward() 
+            reward += self.get_reward(rotor_speeds) 
             pose_all.append(np.concatenate((self.sim.pose,self.sim.v,self.sim.angular_v)))
             
             
@@ -63,9 +66,9 @@ class Task():
                 done=True
                 reward = -300
         if self.sim.pose[2]>self.target_pos[2]:
-                print('reach pose: ',self.sim.pose[2])
+                #print('reach pose: ',self.sim.pose[2])
                 done=True
-                reward = 1000
+                reward = 100
         return next_state, reward, done
 
     def reset(self):
