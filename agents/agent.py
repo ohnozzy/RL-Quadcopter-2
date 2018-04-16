@@ -23,7 +23,7 @@ class ReplayBuffer:
 
     def sample(self, batch_size=64):
         """Randomly sample a batch of experiences from memory."""
-        return random.sample(self.memory, k=min(self.batch_size, len(self.memory)))
+        return random.sample(self.memory, k=min(batch_size, len(self.memory)))
 
     def __len__(self):
         """Return the current size of internal memory."""
@@ -64,42 +64,48 @@ class Actor:
         #net = layers.BatchNormalization()(states)
 
         # Add hidden layers
-        net = layers.Dense(units=32, activation='relu')(states)
-        
+        net = layers.Dense(units=64, activation="tanh")(states)
+        net = layers.Dense(units=64, activation="tanh")(net)
+        #net = layers.ELU(alpha=1.0)(net)
         #net = layers.BatchNormalization()(net)
-        net = layers.Dense(units=64, activation='relu')(net)
-        
         #net = layers.BatchNormalization()(net)
-        net = layers.Dense(units=32, activation='relu')(net)
+        #net = layers.Dense(units=32, activation="relu")(net)
+        #net = layers.ELU(alpha=1.0)(net)
+        #net = layers.BatchNormalization()(net)
+        #net = layers.BatchNormalization()(net)
+        #net = layers.Dense(units=100, activation=None)(net)
+        #net = layers.ELU(alpha=1.0)(net)
+        #net = layers.BatchNormalization()(net)
+        #net = layers.Dense(units=50, activation=None)(net)
+        #net = layers.ELU(alpha=1.0)(net)
+        #net = layers.BatchNormalization()(net)
         
         
 
         # Try different layer sizes, activations, add batch normalization, regularizers, etc.
         #net = layers.BatchNormalization()(net)
         
-        raw_actions = layers.Dense(units=self.action_size, activation='tanh',
-            name='raw_actions')(net)
-        actions = layers.Lambda(lambda x: self.action_mid_range*x+self.action_mid, name='actions')(raw_actions)
+        #final = layers.Dense(units=self.action_size)(net)
+        #raw_actions = layers.ELU(alpha=1.0, name='raw_actions')(final)
+        #actions = layers.Lambda(lambda x: x+1, name='actions')(raw_actions)
 
         # Add final output layer with sigmoid activation
-        #raw_actions = layers.Dense(units=self.action_size, activation='sigmoid',
-        #    name='raw_actions')(net)
+        raw_actions0 = layers.Dense(units=16, activation='tanh')(net)
+        actions = layers.Dense(units=self.action_size, activation='tanh', name="actions")(raw_actions0)
 
         # Scale [0, 1] output for each action dimension to proper range
-        #actions = layers.Lambda(lambda x: (x * self.action_range) + self.action_low,
-        #    name='actions')(raw_actions)
 
         # Create Keras model
         self.model = models.Model(inputs=states, outputs=actions)
 
         # Define loss function using action value (Q value) gradients
         action_gradients = layers.Input(shape=(self.action_size,))
-        loss = K.mean(-action_gradients * actions)
+        loss = K.mean(K.clip(-action_gradients * actions,-10,10))
 
         # Incorporate any additional losses here (e.g. from regularizers)
 
         # Define optimizer and training function
-        optimizer = optimizers.Adam()
+        optimizer = optimizers.Adam(lr=0.001)
         updates_op = optimizer.get_updates(params=self.model.trainable_weights, loss=loss)
         self.train_fn = K.function(
             inputs=[self.model.input, action_gradients, K.learning_phase()],
@@ -133,28 +139,40 @@ class Critic:
 
         # Add hidden layer(s) for state pathway
         
-        net_states = layers.Dense(units=32, activation='relu')(states)
-        
+        net_states = layers.Dense(units=64, activation="tanh")(states)
+        #net_states = layers.ELU(alpha=1.0)(net_states)
         #net_states = layers.BatchNormalization()(net_states)
-        net_states = layers.Dense(units=64, activation='relu')(net_states)
-        
+        #net_states = layers.BatchNormalization()(net_states)
+        net_states = layers.Dense(units=64, activation="tanh")(net_states)
+        #net_states = layers.Dense(units=16, activation="tanh")(net_states)
+        #net_states = layers.ELU(alpha=1.0)(net_states)
+        #net_states = layers.BatchNormalization()(net_states)
 
         # Add hidden layer(s) for action pathway
-        net_actions = layers.Dense(units=32, activation='relu')(actions)
-        
-        net_actions = layers.Dense(units=64, activation='relu')(net_actions)
-        
+        #net_actions = layers.Dense(units=32, activation=None)(actions)
+        #net_actions = layers.ELU(alpha=1.0)(net_actions)
+        #net_actions = layers.BatchNormalization()(net_actions)
+        #net_actions = layers.Dense(units=64, activation=None)(net_actions)
+        #net_actions = layers.ELU(alpha=1.0)(net_actions)
+        #net_actions = layers.BatchNormalization()(net_actions)
         # Try different layer sizes, activations, add batch normalization, regularizers, etc.
         #net_states = layers.BatchNormalization()(net_states)
         #net_actions = layers.BatchNormalization()(net_actions)
 
         # Combine state and action pathways
-        net = layers.Add()([net_states, net_actions])
+        net = layers.Concatenate()([net_states, actions])
+        cnet1 = layers.Dense(units=32, activation="tanh")(net)
+        #cnet2 = layers.Dense(units=8, activation="tanh")(net)
+        #cnet1 = layers.ELU(alpha=1.0)(cnet1)
+        #cnet1 = layers.BatchNormalization()(cnet1)
+        #cnet2 = layers.Dense(units=100)(cnet1)
+        #cnet2 = layers.ELU(alpha=1.0)(cnet2)
+        #cnet2 = layers.BatchNormalization()(cnet2)
 
         # Add more layers to the combined network if needed
 
         # Add final output layer to prduce action values (Q values)
-        Q_values = layers.Dense(units=1, name='q_values')(net)
+        Q_values = layers.Dense(units=1, activation='sigmoid',name='q_values')(cnet1)
 
         # Create Keras model
         self.model = models.Model(inputs=[states, actions], outputs=Q_values)
@@ -196,7 +214,7 @@ class DDPG():
         # Noise process
         self.exploration_mu = 0
         self.exploration_theta = 0.15
-        self.exploration_sigma = 0.2
+        self.exploration_sigma = 0.01
         self.noise = OUNoise(self.action_size, self.exploration_mu, self.exploration_theta, self.exploration_sigma)
 
         # Replay memory
@@ -205,7 +223,7 @@ class DDPG():
         self.memory = ReplayBuffer(self.buffer_size, self.batch_size)
 
         # Algorithm parameters
-        self.gamma = 0.99  # discount factor
+        self.gamma = 0.9  # discount factor
         self.tau = 0.001  # for soft update of target parameters
         
         self.explore = True
@@ -221,13 +239,14 @@ class DDPG():
         self.memory.add(self.last_state, action, reward, next_state, done)
 
         # Learn, if enough samples are available in memory
-        if len(self.memory) > self.batch_size:
-            experiences = self.memory.sample()
-            self.learn(experiences)
+        #if len(self.memory) > self.batch_size:
+        #    experiences = self.memory.sample()
+        #    self.learn(experiences)
 
         # Roll over last state and action
         self.last_state = next_state
         #if done:
+        #    
         #    experiences = self.memory.sample()
         #    self.learn(experiences)
             
@@ -237,14 +256,21 @@ class DDPG():
         state = np.reshape(state, [-1, self.state_size])
         action = self.actor_local.model.predict(state)[0]
         if self.explore:
-            return list(action + self.noise.sample())  # add some noise for exploration
+            return action + self.noise.sample()  # add some noise for exploration
         else:
-            return list(action)
+            return action
         #return list(action)
         
     def disableExplore(self):
         self.explore=False
 
+    def learnDone(self):
+        if len(self.memory) > self.batch_size:
+            batch_num = min(len(self.memory)//self.batch_size,1000)
+            for _ in range(batch_num):
+                experiences = self.memory.sample()
+                self.learn(experiences)
+            
     def learn(self, experiences):
         """Update policy and value parameters using given batch of experience tuples."""
         # Convert experience tuples to separate arrays for each element (states, actions, rewards, etc.)
@@ -260,7 +286,7 @@ class DDPG():
         Q_targets_next = self.critic_target.model.predict_on_batch([next_states, actions_next])
 
         # Compute Q targets for current states and train critic model (local)
-        Q_targets = rewards + self.gamma * Q_targets_next * (1 - dones)
+        Q_targets = rewards + self.gamma * Q_targets_next 
         self.critic_local.model.train_on_batch(x=[states, actions], y=Q_targets)
 
         # Train actor model (local)

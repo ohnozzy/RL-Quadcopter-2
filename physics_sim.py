@@ -111,7 +111,7 @@ class PhysicsSim():
             V = self.prop_wind_speed[prop_number]
             D = self.propeller_size
             n = rotor_speeds[prop_number]
-            J = V / n * D
+            J = V / (n * D)
             # From http://m-selig.ae.illinois.edu/pubs/BrandtSelig-2011-AIAA-2011-1255-LRN-Propellers.pdf
             C_T = max(.12 - .07*max(0, J)-.1*max(0, J)**2, 0)
             thrusts.append(C_T * self.rho * n**2 * D**4)
@@ -128,7 +128,7 @@ class PhysicsSim():
         moments = self.get_moments(thrusts)
 
         self.angular_accels = moments / self.moments_of_inertia
-        angles = self.pose[3:] + self.angular_v * self.dt + 0.5 * self.angular_accels * self.angular_accels * self.dt
+        angles = self.pose[3:] + self.angular_v * self.dt + 0.5 * self.angular_accels * (self.dt**2)
         angles = (angles + 2 * np.pi) % (2 * np.pi)
         self.angular_v = self.angular_v + self.angular_accels * self.dt
 
@@ -136,11 +136,11 @@ class PhysicsSim():
         for ii in range(3):
             if position[ii] <= self.lower_bounds[ii]:
                 new_positions.append(self.lower_bounds[ii])
-                print("lower_bounds: ",ii, " value: ",position[ii])
+                #print("lower_bounds: ",ii, " value: ",position[ii])
                 self.done = True
             elif position[ii] > self.upper_bounds[ii]:
                 new_positions.append(self.upper_bounds[ii])
-                print("upper_bounds: ",ii, " value: ",position[ii])
+                #print("upper_bounds: ",ii, " value: ",position[ii])
                 self.done = True
             else:
                 new_positions.append(position[ii])
@@ -148,6 +148,6 @@ class PhysicsSim():
         self.pose = np.array(new_positions + list(angles))
         self.time += self.dt
         if self.time > self.runtime:
-            print("reach max runtime")
+            #print("reach max runtime")
             self.done = True
         return self.done
