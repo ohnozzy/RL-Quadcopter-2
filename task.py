@@ -113,7 +113,7 @@ class Task():
         speed = 425 + 25* actions
         return speed
 
-    def step(self, actions):
+    def step(self, actions, training=True):
         """Uses action to obtain next state, reward, done."""
         #reward = 0
         additional_component = np.zeros(len(self.score_weight))
@@ -152,6 +152,10 @@ class Task():
         #        if self.sim.time<self.sim.runtime:
         #            reward = -300
         direction = self.sim.pose[:3] - self.target_pos
+        if not training:
+            direction_norm= np.linalg.norm(direction)
+            if direction_norm>1.5:
+                direction /= direction_norm    
         #next_state = np.concatenate((next_state,direction))
         next_state = np.concatenate((self.sim.pose[3:], self.sim.angular_v, self.sim.v, direction))
         #pos_dif = np.linalg.norm(self.sim.pose[:3] - self.target_pos)
