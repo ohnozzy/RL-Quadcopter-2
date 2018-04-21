@@ -64,8 +64,13 @@ class Actor:
         #net = layers.BatchNormalization()(states)
 
         # Add hidden layers
-        net = layers.Dense(units=64, activation="tanh")(states)
-        net = layers.Dense(units=64, activation="tanh")(net)
+        net1 = layers.Dense(units=64, activation="tanh")(states)
+        #net1 = layers.BatchNormalization()(net1)
+        #net1 = layers.Activation("relu")(net1)
+        net2 = layers.Dense(units=64, activation="tanh")(net1)
+        #net2 = layers.BatchNormalization()(net2)
+        #net2 = layers.Activation("relu")(net2)
+        net = layers.Add()([net1, net2])
         #net = layers.ELU(alpha=1.0)(net)
         #net = layers.BatchNormalization()(net)
         #net = layers.BatchNormalization()(net)
@@ -90,8 +95,8 @@ class Actor:
         #actions = layers.Lambda(lambda x: x+1, name='actions')(raw_actions)
 
         # Add final output layer with sigmoid activation
-        raw_actions0 = layers.Dense(units=16, activation='tanh')(net)
-        actions = layers.Dense(units=self.action_size, activation='tanh', name="actions")(raw_actions0)
+        #raw_actions0 = layers.Dense(units=16, activation='relu')(net)
+        actions = layers.Dense(units=self.action_size, activation='tanh', name="actions")(net)
 
         # Scale [0, 1] output for each action dimension to proper range
 
@@ -100,12 +105,12 @@ class Actor:
 
         # Define loss function using action value (Q value) gradients
         action_gradients = layers.Input(shape=(self.action_size,))
-        loss = K.mean(K.clip(-action_gradients * actions,-10,10))
+        loss = K.mean(-action_gradients * actions)
 
         # Incorporate any additional losses here (e.g. from regularizers)
 
         # Define optimizer and training function
-        optimizer = optimizers.Adam(lr=0.001)
+        optimizer = optimizers.Adam()
         updates_op = optimizer.get_updates(params=self.model.trainable_weights, loss=loss)
         self.train_fn = K.function(
             inputs=[self.model.input, action_gradients, K.learning_phase()],
@@ -142,17 +147,19 @@ class Critic:
         net_states = layers.Dense(units=64, activation="tanh")(states)
         #net_states = layers.ELU(alpha=1.0)(net_states)
         #net_states = layers.BatchNormalization()(net_states)
+        
+        #net_states = layers.Activation("relu")(net_states)
         #net_states = layers.BatchNormalization()(net_states)
-        net_states = layers.Dense(units=64, activation="tanh")(net_states)
+        #net_states = layers.Dense(units=64, activation="relu")(net_states)
         #net_states = layers.Dense(units=16, activation="tanh")(net_states)
         #net_states = layers.ELU(alpha=1.0)(net_states)
         #net_states = layers.BatchNormalization()(net_states)
 
         # Add hidden layer(s) for action pathway
-        #net_actions = layers.Dense(units=32, activation=None)(actions)
+        #net_actions = layers.Dense(units=32, activation="relu")(actions)
         #net_actions = layers.ELU(alpha=1.0)(net_actions)
         #net_actions = layers.BatchNormalization()(net_actions)
-        #net_actions = layers.Dense(units=64, activation=None)(net_actions)
+        #net_actions = layers.Dense(units=32, activation="relu")(net_actions)
         #net_actions = layers.ELU(alpha=1.0)(net_actions)
         #net_actions = layers.BatchNormalization()(net_actions)
         # Try different layer sizes, activations, add batch normalization, regularizers, etc.
@@ -160,19 +167,20 @@ class Critic:
         #net_actions = layers.BatchNormalization()(net_actions)
 
         # Combine state and action pathways
-        net = layers.Concatenate()([net_states, actions])
-        cnet1 = layers.Dense(units=32, activation="tanh")(net)
+        net = layers.Concatenate()([states, net_states, actions])
+        cnet1 = layers.Dense(units=64, activation="tanh")(net)
         #cnet2 = layers.Dense(units=8, activation="tanh")(net)
         #cnet1 = layers.ELU(alpha=1.0)(cnet1)
-        #cnet1 = layers.BatchNormalization()(cnet1)
+        
         #cnet2 = layers.Dense(units=100)(cnet1)
         #cnet2 = layers.ELU(alpha=1.0)(cnet2)
         #cnet2 = layers.BatchNormalization()(cnet2)
+        cnet = layers.Concatenate()([states, cnet1, actions])
 
         # Add more layers to the combined network if needed
 
         # Add final output layer to prduce action values (Q values)
-        Q_values = layers.Dense(units=1, activation='sigmoid',name='q_values')(cnet1)
+        Q_values = layers.Dense(units=1, activation=None,name='q_values')(cnet)
 
         # Create Keras model
         self.model = models.Model(inputs=[states, actions], outputs=Q_values)
@@ -219,7 +227,7 @@ class DDPG():
 
         # Replay memory
         self.buffer_size = 1000000
-        self.batch_size = 64
+        self.batch_size = 128
         self.memory = ReplayBuffer(self.buffer_size, self.batch_size)
 
         # Algorithm parameters
@@ -236,6 +244,7 @@ class DDPG():
 
     def step(self, action, reward, next_state, done):
          # Save experience / reward
+        
         self.memory.add(self.last_state, action, reward, next_state, done)
 
         # Learn, if enough samples are available in memory
@@ -254,7 +263,7 @@ class DDPG():
     def act(self, state):
         """Returns actions for given state(s) as per current policy."""
         state = np.reshape(state, [-1, self.state_size])
-        action = self.actor_local.model.predict(state)[0]
+        action = self.actor_target.model.predict(state)[0]
         if self.explore:
             return action + self.noise.sample()  # add some noise for exploration
         else:
@@ -286,11 +295,11 @@ class DDPG():
         Q_targets_next = self.critic_target.model.predict_on_batch([next_states, actions_next])
 
         # Compute Q targets for current states and train critic model (local)
-        Q_targets = rewards + self.gamma * Q_targets_next 
+        Q_targets = rewards + self.gamma * Q_targets_next * (1 - dones) 
         self.critic_local.model.train_on_batch(x=[states, actions], y=Q_targets)
 
         # Train actor model (local)
-        action_gradients = np.reshape(self.critic_local.get_action_gradients([states, actions, 0]), (-1, self.action_size))
+        action_gradients = np.reshape(self.critic_local.get_action_gradients([states, actions, 1]), (-1, self.action_size))
         self.actor_local.train_fn([states, action_gradients, 1])  # custom training function
 
         # Soft-update target models

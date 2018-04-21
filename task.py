@@ -22,8 +22,8 @@ class Task():
         # Goal
         self.target_pos = target_pos if target_pos is not None else np.array([0., 0., 10.]) 
 
-        single_state_size = 9
-        direction_vector_size = 3
+        single_state_size = 7
+        direction_vector_size = 6
         
 
         self.state_size = direction_vector_size+self.action_repeat * single_state_size
@@ -86,12 +86,12 @@ class Task():
         reward = score_v.dot(self.score_weight)/self.score_L1_norm
         return reward/self.action_repeat, score_v"""
         #angular = self.shift_angle_range(self.sim.pose[3:])
-        if pos_dif_norm < 1.0:
-            reward =  1.0 #-0.03*abs(angular[1])
-        else:
-            reward = 1.0/pos_dif_norm #-0.03*abs(angular[1])
-        
-        return 0.1*reward , score_v
+        #if pos_dif_norm < 0.5:
+        #    reward =  1.0 
+        #else:
+        #    reward = 1.0/pos_dif_norm - 0.5
+        reward = 5 - pos_dif_norm
+        return 0.02*reward , score_v
     
     
     def stepNoReward(self, rotor_speeds):
@@ -152,12 +152,20 @@ class Task():
         #        if self.sim.time<self.sim.runtime:
         #            reward = -300
         direction = self.sim.pose[:3] - self.target_pos
+        direction_norm= max(np.linalg.norm(direction),0.01)
+        direction /= direction_norm    
+        ang_v_norm = max(np.linalg.norm(self.sim.angular_v[:-1]),0.01)
+        ang_v = self.sim.angular_v[:-1]/ang_v_norm
+        sim_v_norm = max(np.linalg.norm(self.sim.v), 0.01)
+        sim_v = self.sim.v/sim_v_norm
         if not training:
-            direction_norm= np.linalg.norm(direction)
-            if direction_norm>1.5:
-                direction /= direction_norm    
+            direction_norm = min(direction_norm, 1.5)
         #next_state = np.concatenate((next_state,direction))
-        next_state = np.concatenate((self.sim.pose[3:], self.sim.angular_v, self.sim.v, direction))
+        next_state = np.concatenate((self.shift_angle_range(self.sim.pose[3:-1])/np.pi, ang_v, sim_v, direction, [direction_norm/10.0,ang_v_norm/10.0,sim_v_norm/20.0]))
+        if direction_norm >10.0:
+            fail = True
+        else:
+            fail = False
         #pos_dif = np.linalg.norm(self.sim.pose[:3] - self.target_pos)
         #if pos_dif>10:
         #    done = True
@@ -165,12 +173,19 @@ class Task():
         #        #print('reach pose: ',self.sim.pose[2])
         #        done=True
                 #reward = 100
-        return next_state, reward, done, v
+        return next_state, reward, fail, done, v
 
     def reset(self):
         """Reset the sim to start a new episode."""
         self.sim.reset()
         direction = self.sim.pose[:3] - self.target_pos
+        direction_norm= max(np.linalg.norm(direction),0.01)
+        direction /= direction_norm
         #single_state = np.concatenate((self.sim.pose[2], self.sim.v[2]))
-        state = np.concatenate((self.sim.pose[3:], self.sim.angular_v, self.sim.v, direction))
+        ang_v_norm = max(np.linalg.norm(self.sim.angular_v[:-1]),0.01)
+        ang_v = self.sim.angular_v[:-1]/ang_v_norm
+        sim_v_norm = max(np.linalg.norm(self.sim.v), 0.01)
+        sim_v = self.sim.v/sim_v_norm
+        #next_state = np.concatenate((next_state,direction))
+        state = np.concatenate((self.shift_angle_range(self.sim.pose[3:-1])/np.pi, ang_v, sim_v, direction, [direction_norm/10.0,ang_v_norm/10.0,sim_v_norm/20.0]))
         return state
